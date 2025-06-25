@@ -4,7 +4,7 @@ import seaborn as sns
 
 
 # Load dataset
-df = pd.read_csv("snmdd_dataset.csv")  # Ensure the file name matches exactly
+df = pd.read_csv("F:\SNMD\SNMD\snmdd_dataset.csv")  # Ensure the file name matches exactly
 print(df.head())  # Display first 5 rows of the dataset
 
 # Show column info and missing values
