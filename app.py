@@ -49,13 +49,14 @@ dass_questions = [
 ]
 dass_responses = [st.slider(q, 0, 3, 1) for q in dass_questions]
 dass_score = sum(dass_responses)
+
 # --- Prediction Section ---
 if st.button("🔍 Predict SNMD Risk"):
     features = np.array([[dsm_score, iat_score, dass_score]])
     prediction = model.predict(features)[0]
     probability = model.predict_proba(features)[0][1]  # Overall SNMD probability
 
-    # ❗ Simulated subtype breakdown (replace with real model output when available)
+    # Subtype Breakdown
     cra_score = min(dsm_score / 5, 1.0) * 100
     nc_score = min(iat_score / 25, 1.0) * 100
     io_score = min(dass_score / 15, 1.0) * 100
@@ -71,20 +72,62 @@ if st.button("🔍 Predict SNMD Risk"):
     - **Net Compulsion (NC): `{nc_pct:.1f}%`**
     - **Information Overload (IO): `{io_pct:.1f}%`**
     """)
-    
-    # Optional: Add a pie chart
+
+    # Pie Chart
     fig, ax = plt.subplots()
     ax.pie([cra_pct, nc_pct, io_pct], labels=["CRA", "NC", "IO"], autopct='%1.1f%%', startangle=90)
     ax.axis('equal')
     st.pyplot(fig)
 
+    # --- Enhanced Risk Feedback ---
     if prediction == 1:
-        st.error(f"🟥 High risk of SNMD ({probability * 100:.2f}%)")
+        st.markdown(f"""
+        <div style='background-color: #ffebee; padding: 20px; border-radius: 10px; border-left: 6px solid #f44336;'>
+            <h3 style='color: #d32f2f; margin-top: 0;'>🔵 High Risk of SNMD Detected ({probability * 100:.2f}%)</h3>
+            <p style='margin-bottom: 0;'>Your assessment indicates significant risk factors for Social Network Mental Disorders.</p>
+        </div>
+        """, unsafe_allow_html=True)
+
+        with st.expander("🔍 Detailed Risk Factors", expanded=True):
+            st.markdown("### Primary Risk Factors Identified:")
+            col1, col2 = st.columns(2)
+            with col1:
+                st.markdown(f"""
+                **Psychological Indicators:**
+                - DSM-5 Score: {dsm_score}/5  
+                - IAT Score: {iat_score}/25  
+                - DASS Score: {dass_score}/15
+                """)
+            with col2:
+                st.markdown(f"""
+                **Behavioral Patterns:**
+                - Cyber-Relationship Addiction: {cra_pct:.1f}%  
+                - Net Compulsion: {nc_pct:.1f}%  
+                - Information Overload: {io_pct:.1f}%
+                """)
+
+            st.markdown("""
+            ### Recommended Actions:
+            - 🩺 Consult a mental health professional
+            - ⏱️ Set strict screen time limits
+            - 📵 Plan weekly digital detox days
+            - 🧘 Practice mindfulness
+            - 👥 Increase real-life social interactions
+            """)
+
+        st.warning("""
+        **Important:** This tool is not a medical diagnosis. Please consult a professional for clinical assessment.
+        """)
+
     else:
-        st.success(f"🟩 Low risk of SNMD ({probability * 100:.2f}%)")
+        st.success(f"""
+        🟢 Low risk of SNMD ({probability * 100:.2f}%)
 
+        Your assessment shows healthy social media usage patterns. 
+        Maintain your current balanced approach and remain mindful of any changes.
+        """)
 
-    # --- Graph: Score Breakdown ---
+    # --- Score Bar Chart ---
     st.subheader("📊 Score Breakdown")
     categories = ['DSM-5', 'IAT', 'DASS']
     values = [dsm_score, iat_score, dass_score]
@@ -100,80 +143,4 @@ if st.button("🔍 Predict SNMD Risk"):
     st.pyplot(fig)
 
     st.markdown("**Note:** This is a supportive screening tool, not a medical diagnosis.")
-
-# --- Divider ---
-st.markdown("---")
-st.header("📊 Explore SNMD Trends in Dataset")
-
-# --- Load Dataset via File Uploader ---
-st.title("📊 SNMDD Behavioral Insights Dashboard")
-st.markdown("Upload your `snmdd_dataset_cleaned.csv` file below:")
-
-uploaded_file = st.file_uploader("Upload CSV", type=["csv"])
-
-if uploaded_file:
-    try:
-        df = pd.read_csv(uploaded_file)
-
-        # --- Preprocess ---
-        df['timestamp'] = pd.to_datetime(df['timestamp'])
-        df['hour'] = df['timestamp'].dt.hour
-        df['date'] = df['timestamp'].dt.date
-
-        df['likes'] = pd.to_numeric(df['likes'], errors='coerce')
-        df['comments'] = pd.to_numeric(df['comments'], errors='coerce')
-        df['sentiment'] = pd.to_numeric(df['sentiment'], errors='coerce')
-        df['engagement'] = df['likes'] + df['comments']
-
-        df.dropna(subset=['engagement', 'sentiment'], inplace=True)
-
-        # --- Heuristics for Symptoms ---
-        df['negative_sentiment'] = df['sentiment'] < 0
-        df['high_engagement'] = df['engagement'] > df['engagement'].mean()
-        df['symptom_score'] = df[['negative_sentiment', 'high_engagement']].sum(axis=1)
-
-        summary = df.groupby('user_id')[['negative_sentiment', 'high_engagement']].sum()
-        summary['symptom_type'] = summary.apply(
-            lambda row: 'Both' if row['negative_sentiment'] > 0 and row['high_engagement'] > 0
-            else ('Negative Sentiment' if row['negative_sentiment'] > 0
-                  else ('High Engagement' if row['high_engagement'] > 0 else 'None')),
-            axis=1
-        )
-
-        # --- Quick Metrics ---
-        st.subheader("📈 Project Overview")
-        st.metric("Total Users", len(summary))
-        st.metric("Total Posts Analyzed", len(df))
-
-        # --- Pie Chart: Symptom Type Distribution ---
-        st.subheader("🥧 Symptom Type Distribution (Pie Chart)")
-        counts = summary['symptom_type'].value_counts()
-        fig1, ax1 = plt.subplots()
-        ax1.pie(counts, labels=counts.index, autopct='%1.1f%%', startangle=90)
-        ax1.axis('equal')
-        st.pyplot(fig1)
-
-        # --- Bar Chart ---
-        st.subheader("📊 User Symptom Breakdown (Bar Chart)")
-        fig2, ax2 = plt.subplots()
-        sns.barplot(x=counts.index, y=counts.values, palette='pastel', ax=ax2)
-        ax2.set_ylabel("User Count")
-        ax2.set_title("Symptom Type Distribution")
-        st.pyplot(fig2)
-
-        # --- Heatmap: Posting Frequency ---
-        st.subheader("🕒 Posting Frequency Heatmap (Hour vs Date)")
-        heatmap_data = df.groupby(['hour', 'date']).size().unstack(fill_value=0)
-        fig3, ax3 = plt.subplots(figsize=(10, 6))
-        sns.heatmap(heatmap_data, cmap="YlGnBu", ax=ax3)
-        ax3.set_xlabel("Date")
-        ax3.set_ylabel("Hour of Day")
-        ax3.set_title("Post Frequency by Hour and Date")
-        st.pyplot(fig3)
-
-    except Exception as e:
-        st.error("❌ Something went wrong while processing the file.")
-        st.exception(e)
-
-else:
-    st.info("📂 Please upload your `snmdd_dataset_cleaned.csv` to begin.")
+st.markdown("For a professional assessment, please consult a mental health expert.")        

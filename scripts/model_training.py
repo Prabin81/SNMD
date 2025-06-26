@@ -5,43 +5,50 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import classification_report, confusion_matrix, accuracy_score
 import matplotlib.pyplot as plt
 import seaborn as sns
+import pickle
 
-# Load labeled dataset - use raw string or forward slashes
-data = pd.read_csv("outputs/user_features_labeled.csv")
+# --- Load labeled dataset ---
+data = pd.read_csv("SNMD/outputs/user_features_labeled.csv")
 
-# Define features and target
-features = [
-    'avg_likes',
-    'avg_comments',
-    'avg_engagement',
+# --- Recommended features for modeling ---
+recommended_features = [
     'avg_sentiment',
     'neg_post_ratio',
-    'total_posts',
+    'night_activity_ratio',
+    'engagement_volatility',
+    'avg_emotional_words',
     'avg_post_interval'
-    # 'parasociality_ratio'  # Remove if not available
 ]
 
-X = data[features].fillna(0)
+print("\n✅ Recommended features for modeling:")
+for feat in recommended_features:
+    print(f" - {feat}")
+
+# --- Feature selection ---
+X = data[recommended_features].fillna(0)
 y = data['label']
 
-# Train-test split
+# --- Train-test split ---
 X_train, X_test, y_train, y_test = train_test_split(
     X, y, test_size=0.2, random_state=42, stratify=y
 )
 
-# Model training
+# --- Model training ---
 model = RandomForestClassifier(n_estimators=100, random_state=42)
 model.fit(X_train, y_train)
 
-# Predictions
+# --- Predictions ---
 y_pred = model.predict(X_test)
 
-# Evaluation
-print("\n=== Classification Report ===")
-print(classification_report(y_test, y_pred))
-print("\n✅ Accuracy Score:", accuracy_score(y_test, y_pred))
+# --- Evaluation ---
+report = classification_report(y_test, y_pred)
+accuracy = accuracy_score(y_test, y_pred)
 
-# Confusion Matrix plot
+print("\n=== Classification Report ===")
+print(report)
+print("\n✅ Accuracy Score:", accuracy)
+
+# --- Confusion Matrix plot ---
 conf_matrix = confusion_matrix(y_test, y_pred)
 plt.figure(figsize=(6, 4))
 sns.heatmap(conf_matrix, annot=True, fmt='d', cmap='Blues',
@@ -52,9 +59,21 @@ plt.ylabel('Actual')
 plt.title('Confusion Matrix')
 plt.tight_layout()
 
-# Ensure output directory exists before saving
-output_dir = "../outputs"
+# --- Save Outputs ---
+output_dir = "outputs"
 os.makedirs(output_dir, exist_ok=True)
 
-plt.savefig(os.path.join(output_dir, "confusion_matrix.png"))
+# Save model
+with open(os.path.join(output_dir, "model_rf.pkl"), "wb") as f:
+    pickle.dump(model, f)
+
+# Save classification report
+with open(os.path.join(output_dir, "rf_classification_report.txt"), "w") as f:
+    f.write(report)
+    f.write(f"\nAccuracy: {accuracy:.4f}")
+
+# Save confusion matrix plot
+plt.savefig(os.path.join(output_dir, "confusion_matrix_rf.png"))
 plt.show()
+
+print(f"\n✅ Model and results saved in: {output_dir}/")
