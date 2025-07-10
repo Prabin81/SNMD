@@ -1,0 +1,28 @@
+import pandas as pd
+import seaborn as sns
+import matplotlib.pyplot as plt
+
+# Load engineered features
+df = pd.read_csv("user_features_final.csv")
+
+# Correlation Heatmap
+plt.figure(figsize=(12, 6))
+sns.heatmap(df.corr(numeric_only=True), annot=True, cmap='coolwarm')
+plt.title("Feature Correlation Heatmap")
+plt.show()
+
+# Pairplot of key behavioral indicators
+sns.pairplot(df[['avg_likes', 'avg_comments', 'avg_sentiment', 'parasocial_ratio', 'self_disclosure_ratio', 'snmd_label']], hue='snmd_label')
+plt.show()
+
+# Distribution plot of IAT Score
+sns.histplot(df['iat_score'], bins=20, kde=True)
+plt.title("IAT Score Distribution")
+plt.show()
+
+# Risk Category Bar Chart
+sns.countplot(x='snmd_label', data=df)
+plt.title("SNMD Label Distribution")
+plt.xlabel("SNMD Category")
+plt.ylabel("User Count")
+plt.show()
