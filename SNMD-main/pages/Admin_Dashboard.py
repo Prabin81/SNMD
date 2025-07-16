@@ -4,26 +4,34 @@ import os
 import matplotlib.pyplot as plt
 import seaborn as sns
 from PIL import Image # For loading images like confusion matrix
+import numpy as np # For numerical operations, e.g., in describe() and correlation
+import pickle # To potentially load model if needed for live admin functions
 
 # --- Access Control ---
-# Ensure user is logged in before rendering this page
+# This ensures that this page can only be accessed if the user is logged in
 if "logged_in" not in st.session_state or not st.session_state.logged_in:
     st.warning("🔒 Please log in as an admin from the home page to access this dashboard.")
-    st.stop() # Stop execution if not logged in
+    st.stop() # Stop execution of this page if not logged in
 
+# --- Dynamic Path Handling ---
+# This file is located at E:/SNMD-MAIN/pages/2_Admin_Dashboard.py
+# All data/model results are expected to be at E:/SNMD-MAIN/outputs/
+# To get from the current file's directory to E:/SNMD-MAIN/, we go up one level (../)
 script_dir = os.path.dirname(os.path.abspath(__file__))
+base_project_dir = os.path.join(script_dir, "..") # This now points to E:/SNMD-MAIN/
 
-base_project_dir = os.path.join(script_dir, "..", "..")
+# Define absolute paths to the relevant data and model output files
+LABELED_DATA_PATH = os.path.join(base_project_dir, "outputs", "user_features_labeled.csv")
+CLEANED_DATA_PATH = os.path.join(base_project_dir, "outputs", "snmdd_dataset_cleaned.csv")
+MODEL_RESULTS_DIR = os.path.join(base_project_dir, "outputs", "ssl_results")
 
-# --- Load Data ---
+# Paths for specific model output files within MODEL_RESULTS_DIR
+CLASSIFICATION_REPORT_PATH = os.path.join(MODEL_RESULTS_DIR, "rf_classification_report.txt")
+CONFUSION_MATRIX_PATH = os.path.join(MODEL_RESULTS_DIR, "confusion_matrix_rf.png")
+FEATURE_IMPORTANCES_PATH = os.path.join(MODEL_RESULTS_DIR, "feature_importances_rf.png")
+MODEL_RF_PATH = os.path.join(base_project_dir, "outputs", "model_rf.pkl") # Assuming main model is here
 
-LABELED_DATA_PATH = os.path.join(script_dir, "..", "..", "outputs", "user_features_labeled.csv")
-CLEANED_DATA_PATH = os.path.join(script_dir, "..", "..", "outputs", "snmdd_dataset_cleaned.csv")
-MODEL_RESULTS_DIR = os.path.join(script_dir, "..", "..", "outputs", "ssl_results") # Based on image
-# Assuming model_rf.pkl used by admin is from the top-level outputs
-MODEL_RF_PATH = os.path.join(script_dir, "..", "..", "outputs", "model_rf.pkl")
-
-
+# --- Streamlit Page Content ---
 st.title("📊 Admin Dashboard: Social Network Data Insights")
 st.markdown("This dashboard provides an overview of the processed social network data and machine learning model performance.")
 
@@ -35,8 +43,12 @@ with tab1:
     st.header("🔬 Processed User Features and Labels")
     st.write("This table shows the engineered features and generated risk labels for each user, used for training the main SNMD prediction model.")
 
+    @st.cache_data # Cache data loading for performance
+    def load_labeled_data(path):
+        return pd.read_csv(path)
+
     try:
-        labeled_df = pd.read_csv(LABELED_DATA_PATH)
+        labeled_df = load_labeled_data(LABELED_DATA_PATH)
         st.dataframe(labeled_df)
 
         st.subheader("Summary Statistics of Labeled Features")
@@ -44,22 +56,37 @@ with tab1:
 
         st.subheader("Distribution of Generated Risk Labels")
         fig, ax = plt.subplots()
-        # Ensure labels are treated as categories for correct plotting
+        # Get value counts of the 'label' column
         label_counts = labeled_df['label'].value_counts().sort_index()
-        # Map labels to more descriptive names if applicable (0: Low, 1: Moderate, 2: High)
-        label_names = {0: 'Low Risk', 1: 'Moderate Risk', 2: 'High Risk'}
-        label_counts.index = label_counts.index.map(label_names)
 
-        label_counts.plot(kind='bar', ax=ax, color=['lightgreen', 'skyblue', 'lightcoral'])
-        ax.set_title('Distribution of Generated Risk Labels Across Users')
-        ax.set_xlabel('Risk Level')
-        ax.set_ylabel('Number of Users')
-        plt.xticks(rotation=45, ha='right')
-        st.pyplot(fig)
-        plt.close(fig) # Close figure to free memory
+        # Define mapping for labels to descriptive names and corresponding colors
+        label_map = {0: 'Low Risk', 1: 'Moderate Risk', 2: 'High Risk'} # Adjust if your labels differ (e.g., just 0 and 1)
+        colors_map = {0: 'lightgreen', 1: 'skyblue', 2: 'lightcoral'}
+
+        # Prepare data for plotting, ensuring all defined labels are considered
+        plot_labels = [label_map.get(lbl, f'Unknown ({lbl})') for lbl in sorted(label_map.keys())]
+        plot_counts = [label_counts.get(lbl_val, 0) for lbl_val in sorted(label_map.keys())]
+        plot_colors = [colors_map.get(lbl, 'gray') for lbl in sorted(label_map.keys())]
+
+        # Filter out labels that truly have zero counts if you prefer not to show them
+        active_labels = [plot_labels[i] for i, count in enumerate(plot_counts) if count > 0]
+        active_counts = [count for count in plot_counts if count > 0]
+        active_colors = [plot_colors[i] for i, count in enumerate(plot_counts) if count > 0]
+
+
+        if not active_counts: # Handle case where there's no data
+            st.info("No labeled data to display distribution.")
+        else:
+            ax.bar(active_labels, active_counts, color=active_colors)
+            ax.set_title('Distribution of Generated Risk Labels Across Users')
+            ax.set_xlabel('Risk Level')
+            ax.set_ylabel('Number of Users')
+            plt.xticks(rotation=45, ha='right')
+            st.pyplot(fig)
+            plt.close(fig)
 
         st.subheader("Correlation Matrix of Features")
-        # Exclude non-numeric columns and the 'label' itself for correlation calculation
+        # Select only numeric columns for correlation calculation, excluding the 'label' itself
         numeric_cols = labeled_df.select_dtypes(include=np.number).columns.drop('label', errors='ignore')
         if not numeric_cols.empty:
             fig, ax = plt.subplots(figsize=(10, 8))
@@ -68,11 +95,13 @@ with tab1:
             st.pyplot(fig)
             plt.close(fig)
         else:
-            st.info("No numeric features found for correlation analysis.")
+            st.info("No numeric features found for correlation analysis in the labeled data.")
 
 
     except FileNotFoundError:
-        st.error(f"Labeled data not found at `{LABELED_DATA_PATH}`. Please ensure `label_generation.py` has been run.")
+        st.error(f"Labeled data file not found at `{LABELED_DATA_PATH}`. Please ensure `label_generation.py` has been run and the file exists.")
+    except pd.errors.EmptyDataError:
+        st.error(f"The file `{LABELED_DATA_PATH}` is empty. Please check the data source.")
     except Exception as e:
         st.error(f"Error loading or processing labeled data: {e}")
 
@@ -81,54 +110,36 @@ with tab2:
     st.header("📈 Machine Learning Model Performance (RandomForest Classifier)")
     st.write("Evaluation metrics and visualizations for the RandomForest Classifier trained on the social network data features.")
 
-    # Load Classification Report
+    # Load and display Classification Report
     st.subheader("Classification Report")
-    report_path = os.path.join(MODEL_RESULTS_DIR, "rf_classification_report.txt")
     try:
-        with open(report_path, "r") as f:
+        with open(CLASSIFICATION_REPORT_PATH, "r") as f:
             report_content = f.read()
         st.text(report_content)
     except FileNotFoundError:
-        st.error(f"Classification report not found at `{report_path}`. Please run `model_training.py`.")
+        st.error(f"Classification report file not found at `{CLASSIFICATION_REPORT_PATH}`. Please run `model_training.py` to generate model results.")
     except Exception as e:
         st.error(f"Error loading classification report: {e}")
 
-    # Display Confusion Matrix
+    # Display Confusion Matrix Image
     st.subheader("Confusion Matrix")
-    confusion_matrix_path = os.path.join(MODEL_RESULTS_DIR, "confusion_matrix_rf.png")
     try:
-        conf_matrix_img = Image.open(confusion_matrix_path)
+        conf_matrix_img = Image.open(CONFUSION_MATRIX_PATH)
         st.image(conf_matrix_img, caption="Confusion Matrix for RandomForest Model", use_column_width=True)
     except FileNotFoundError:
-        st.error(f"Confusion matrix image not found at `{confusion_matrix_path}`. Please run `model_training.py`.")
+        st.error(f"Confusion matrix image not found at `{CONFUSION_MATRIX_PATH}`. Please run `model_training.py` to generate model plots.")
     except Exception as e:
         st.error(f"Error loading confusion matrix image: {e}")
 
-    # Display Feature Importances
+    # Display Feature Importances Image
     st.subheader("Feature Importances")
-    feature_importances_path = os.path.join(MODEL_RESULTS_DIR, "feature_importances_rf.png")
     try:
-        feature_imp_img = Image.open(feature_importances_path)
+        feature_imp_img = Image.open(FEATURE_IMPORTANCES_PATH)
         st.image(feature_imp_img, caption="Feature Importances for RandomForest Model", use_column_width=True)
     except FileNotFoundError:
-        st.error(f"Feature importances image not found at `{feature_importances_path}`. Please run `model_training.py`.")
+        st.error(f"Feature importances image not found at `{FEATURE_IMPORTANCES_PATH}`. Please run `model_training.py` to generate model plots.")
     except Exception as e:
         st.error(f"Error loading feature importances image: {e}")
-
-    # Optional: Display model details (e.g., if you want to inspect its parameters)
-    # try:
-    #     import pickle
-    #     with open(MODEL_RF_PATH, "rb") as f:
-    #         rf_model = pickle.load(f)
-    #     st.subheader("Model Details")
-    #     st.write(f"Model Type: {type(rf_model).__name__}")
-    #     st.write("Model Parameters:")
-    #     st.json(rf_model.get_params()) # Display model parameters
-    # except FileNotFoundError:
-    #     st.info(f"RandomForest model not found at `{MODEL_RF_PATH}`. Cannot display details.")
-    # except Exception as e:
-    #     st.error(f"Error loading RandomForest model for details: {e}")
-
 
 # --- Tab 3: Raw Cleaned Data (snmdd_dataset_cleaned.csv) ---
 with tab3:
@@ -136,8 +147,12 @@ with tab3:
     st.write("This table shows a sample of the cleaned individual social media posts before feature engineering was applied. This is the foundation of the analysis.")
     st.info("Displaying the entire raw dataset might consume significant memory and time for very large datasets. Showing only the first 1000 rows for performance.")
 
+    @st.cache_data # Cache data loading for performance
+    def load_cleaned_data(path):
+        return pd.read_csv(path)
+
     try:
-        cleaned_df = pd.read_csv(CLEANED_DATA_PATH)
+        cleaned_df = load_cleaned_data(CLEANED_DATA_PATH)
         st.dataframe(cleaned_df.head(1000)) # Show only first 1000 rows for performance
         st.write(f"Displaying first 1000 rows of {cleaned_df.shape[0]} total rows.")
 
@@ -145,10 +160,13 @@ with tab3:
         st.write(cleaned_df.describe())
 
         st.subheader("Example of Cleaned Text Content")
+        # Display a few examples of cleaned text
         for i, row in cleaned_df.head(5).iterrows():
             st.write(f"**Post {i+1}:** {row['cleaned_text']}")
 
     except FileNotFoundError:
-        st.error(f"Cleaned dataset not found at `{CLEANED_DATA_PATH}`. Please ensure `main.py` (or `data_cleaning.py`) has been run.")
+        st.error(f"Cleaned dataset file not found at `{CLEANED_DATA_PATH}`. Please ensure your data cleaning process (e.g., `data_cleaning.py` or `main.py`) has been run.")
+    except pd.errors.EmptyDataError:
+        st.error(f"The file `{CLEANED_DATA_PATH}` is empty. Please check the data source.")
     except Exception as e:
         st.error(f"Error loading cleaned data: {e}")
