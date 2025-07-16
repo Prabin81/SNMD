@@ -1,79 +1,229 @@
 import os
 import pandas as pd
-from sklearn.model_selection import train_test_split
+from sklearn import model_selection
+from sklearn.model_selection import train_test_split, cross_val_score, GridSearchCV
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import classification_report, confusion_matrix, accuracy_score
 import matplotlib.pyplot as plt
 import seaborn as sns
 import pickle
+import numpy as np
 
-# Load labeled dataset 
-data = pd.read_csv("SNMD-main/output/user_features_labeled.csv")
+print("Starting model training and evaluation process...")
 
-# Recommended features for modeling
-recommended_features = [
-    'avg_sentiment',
-    'neg_post_ratio',
-    'night_activity_ratio',
-    'engagement_volatility',
-    'avg_emotional_words',
-    'avg_post_interval'
+# --- Configuration ---
+# Data input path (Now correctly pointing to top-level outputs)
+DATA_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "outputs", "user_features_labeled.csv")
+
+# Output directory for model results (Now correctly pointing to top-level outputs)
+OUTPUT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "outputs", "model_results")
+os.makedirs(OUTPUT_DIR, exist_ok=True)
+
+# --- CRITICAL CHANGE: FEATURES FOR PREDICTION ---
+# These features should NOT be the ones directly summed/used in your generate_ordinal_label heuristic.
+# We're using general engagement metrics and post counts, which might correlate with risk
+# but are not directly the 'components' of the heuristic score.
+PREDICTION_FEATURES = [
+    'avg_likes',
+    'avg_comments',
+    'avg_engagement',
+    'total_posts',
+    # 'reciprocity' # Will be added dynamically if available
 ]
 
-print("\n✅ Recommended features for modeling:")
-for feat in recommended_features:
+# --- Noise Configuration (Keep for simulating real-world imperfections if needed) ---
+NOISE_MEAN = 0
+NOISE_STD_DEV = 0.005 # Reduced noise, as feature separation is the primary fix. Adjust as needed.
+
+# --- Load Labeled Dataset ---
+try:
+    data = pd.read_csv(DATA_PATH)
+    # Check if 'reciprocity' column exists and add it to PREDICTION_FEATURES if it does
+    if 'reciprocity' in data.columns and 'reciprocity' not in PREDICTION_FEATURES:
+        PREDICTION_FEATURES.append('reciprocity')
+
+    print(f"✅ Successfully loaded data from: {DATA_PATH}")
+    print(f"Dataset shape: {data.shape}")
+except FileNotFoundError:
+    print(f"❌ Error: Labeled dataset not found at {DATA_PATH}. Please run label_generation.py first.")
+    exit()
+except Exception as e:
+    print(f"❌ An unexpected error occurred while loading data: {e}")
+    exit()
+
+print("\n✅ Features selected for modeling (NOT directly used as components in label generation heuristic):")
+for feat in PREDICTION_FEATURES:
     print(f" - {feat}")
 
-# Feature selection 
-X = data[recommended_features].fillna(0)
+# --- Feature Selection and Handling Missing Values ---
+# Ensure all selected features exist and handle NaNs
+missing_feats = [f for f in PREDICTION_FEATURES if f not in data.columns]
+if missing_feats:
+    print(f"❌ Error: The following prediction features are missing from the dataset: {missing_feats}")
+    print("Please check 'feature_engineer.py' and 'label_generation.py' outputs.")
+    exit()
+
+X = data[PREDICTION_FEATURES].fillna(0) # Fill NaN with 0, consider other strategies like mean/median
 y = data['label']
 
-# Train-test split 
+print(f"\nFeatures (X) shape: {X.shape}")
+print(f"Target (y) shape: {y.shape}")
+print(f"Class distribution in target:\n{y.value_counts()}")
+
+# --- Train-Test Split ---
 X_train, X_test, y_train, y_test = train_test_split(
     X, y, test_size=0.2, random_state=42, stratify=y
 )
+print("\n✅ Data split into training and testing sets.")
+print(f"X_train shape: {X_train.shape}, X_test shape: {X_test.shape}")
+print(f"y_train distribution:\n{y_train.value_counts()}")
+print(f"y_test distribution:\n{y_test.value_counts()}")
 
-# Model training 
-model = RandomForestClassifier(n_estimators=100, random_state=42)
-model.fit(X_train, y_train)
+# --- Introduce Noise to Training Data (Optional, for fine-tuning accuracy) ---
+print(f"\n✨ Introducing Gaussian noise (mean={NOISE_MEAN}, std_dev={NOISE_STD_DEV}) to training features...")
+noise = np.random.normal(NOISE_MEAN, NOISE_STD_DEV, X_train.shape)
+X_train_noisy = X_train + noise
+print("✅ Noise added to X_train.")
 
-# Predictions 
-y_pred = model.predict(X_test)
+# --- Model Training (with Hyperparameter Tuning) ---
+print("\n🚀 Training RandomForestClassifier with GridSearchCV...")
 
-# Evaluation 
+# Define hyperparameters to tune
+param_grid = {
+    'n_estimators': [50, 100, 150], # Number of trees in the forest
+    'max_depth': [5, 10, 15, None], # Maximum depth of the tree
+    'min_samples_leaf': [1, 2, 4],  # Minimum number of samples required to be at a leaf node
+    'class_weight': ['balanced'] # Keep balanced for potentially imbalanced classes
+}
+
+# Initialize GridSearchCV
+grid_search = GridSearchCV(
+    estimator=RandomForestClassifier(random_state=42),
+    param_grid=param_grid,
+    cv=5, # 5-fold cross-validation during tuning
+    scoring='accuracy',
+    n_jobs=-1, # Use all available cores
+    verbose=1
+)
+
+grid_search.fit(X_train_noisy, y_train)
+
+model = grid_search.best_estimator_ # Get the best model from grid search
+print(f"✅ Best RandomForestClassifier parameters found: {grid_search.best_params_}")
+print("✅ Model training complete.")
+
+
+# --- Predictions ---
+print("Generating predictions on the test set (clean data)...")
+y_pred = model.predict(X_test) # Predict on clean test data
+print("✅ Predictions generated.")
+
+# --- Evaluation ---
+print("\n=== Model Evaluation ===")
 report = classification_report(y_test, y_pred)
 accuracy = accuracy_score(y_test, y_pred)
 
 print("\n=== Classification Report ===")
 print(report)
-print("\n✅ Accuracy Score:", accuracy)
+print(f"\n✅ Accuracy Score on Test Set: {accuracy:.4f}")
 
-# Confusion Matrix plot 
+# --- Interpretation of Accuracy ---
+if accuracy >= 0.90: # Adjust threshold for "very high" based on expectation after fix
+    print("\n--- NOTE: HIGH ACCURACY DETECTED! ---")
+    print("While data leakage from labeling has been addressed by feature separation,")
+    print("a very high accuracy might still indicate the problem is relatively easy to learn,")
+    print("or there might still be subtle indirect correlations between prediction features and label generation.")
+    print("Consider further investigation or more diverse feature sets, or refine your heuristic.")
+elif accuracy < 0.70:
+    print("\n--- NOTE: LOW ACCURACY DETECTED! ---")
+    print("Accuracy is relatively low. Consider:")
+    print("1. Re-evaluating the 'PREDICTION_FEATURES' for stronger signals.")
+    print("2. Adjusting RandomForestClassifier hyperparameters (more GridSearchCV iterations/ranges).")
+    print("3. Re-evaluating the heuristic in label_generation.py if this accuracy is lower than desired.")
+    print("--------------------------------------------------")
+
+
+# --- Cross-Validation (Robust evaluation on the full dataset) ---
+print("\n--- Performing 5-Fold Cross-Validation on FULL dataset (with noise per fold) ---")
+cv_accuracies = []
+kf = model_selection.StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
+
+for fold, (train_index, val_index) in enumerate(kf.split(X, y)):
+    X_fold_train, X_fold_val = X.iloc[train_index], X.iloc[val_index]
+    y_fold_train, y_fold_val = y.iloc[train_index], y.iloc[val_index]
+
+    # Apply noise to the training set of the current fold
+    fold_noise = np.random.normal(NOISE_MEAN, NOISE_STD_DEV, X_fold_train.shape)
+    X_fold_train_noisy = X_fold_train + fold_noise
+
+    # Use best parameters found by GridSearchCV for CV model
+    cv_model = RandomForestClassifier(**grid_search.best_params_, random_state=42)
+    cv_model.fit(X_fold_train_noisy, y_fold_train)
+    fold_pred = cv_model.predict(X_fold_val)
+    fold_accuracy = accuracy_score(y_fold_val, fold_pred)
+    cv_accuracies.append(fold_accuracy)
+    print(f"Fold {fold+1} Accuracy: {fold_accuracy:.4f}")
+
+cv_scores_mean = np.mean(cv_accuracies)
+cv_scores_std = np.std(cv_accuracies)
+
+print(f"Cross-validation accuracy scores (5-folds): {cv_accuracies}")
+print(f"Mean CV Accuracy: {cv_scores_mean:.4f}")
+print(f"Standard Deviation of CV Accuracy: {cv_scores_std:.4f}")
+
+# --- Feature Importance (based on the best model from GridSearchCV) ---
+print("\n=== Feature Importances (from Best Model) ===")
+if not model.feature_importances_.size == 0:
+    feature_importances = pd.Series(model.feature_importances_, index=X.columns).sort_values(ascending=False)
+    print(feature_importances)
+    plt.figure(figsize=(8, 5))
+    sns.barplot(x=feature_importances.values, y=feature_importances.index)
+    plt.title('Feature Importances (Best Model)')
+    plt.xlabel('Importance')
+    plt.ylabel('Feature')
+    plt.tight_layout()
+    plt.savefig(os.path.join(OUTPUT_DIR, "feature_importances_rf.png"))
+    #plt.show() # Commented out for automated runs
+else:
+    print("Could not compute feature importances.")
+
+
+# --- Confusion Matrix Plot ---
+print("\nGenerating Confusion Matrix plot...")
 conf_matrix = confusion_matrix(y_test, y_pred)
 plt.figure(figsize=(6, 4))
 sns.heatmap(conf_matrix, annot=True, fmt='d', cmap='Blues',
-            xticklabels=['Not At Risk', 'At Risk'],
-            yticklabels=['Not At Risk', 'At Risk'])
+            xticklabels=['Low Risk', 'Moderate Risk', 'High Risk'], # Adjusted for 3 classes
+            yticklabels=['Low Risk', 'Moderate Risk', 'High Risk']) # Adjusted for 3 classes
 plt.xlabel('Predicted')
 plt.ylabel('Actual')
 plt.title('Confusion Matrix')
 plt.tight_layout()
 
-# Save Outputs 
-output_dir = "outputs"
-os.makedirs(output_dir, exist_ok=True)
+# --- Save Outputs ---
+print(f"\nSaving model and results to: {OUTPUT_DIR}/")
 
 # Save model
-with open(os.path.join(output_dir, "model_rf.pkl"), "wb") as f:
+model_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "models", "model_rf.pkl") # Save model in SNMD-main/models/
+with open(model_path, "wb") as f:
     pickle.dump(model, f)
+print(f"✅ Model saved to: {model_path}")
 
 # Save classification report
-with open(os.path.join(output_dir, "rf_classification_report.txt"), "w") as f:
+report_path = os.path.join(OUTPUT_DIR, "rf_classification_report.txt")
+with open(report_path, "w") as f:
     f.write(report)
-    f.write(f"\nAccuracy: {accuracy:.4f}")
+    f.write(f"\n\nAccuracy on Test Set: {accuracy:.4f}")
+    f.write(f"\nMean CV Accuracy: {cv_scores_mean:.4f}")
+    f.write(f"\nStd Dev CV Accuracy: {cv_scores_std:.4f}")
+    f.write(f"\n\nBest Hyperparameters: {grid_search.best_params_}")
+print(f"✅ Classification report saved to: {report_path}")
 
 # Save confusion matrix plot
-plt.savefig(os.path.join(output_dir, "confusion_matrix_rf.png"))
-plt.show()
+confusion_matrix_path = os.path.join(OUTPUT_DIR, "confusion_matrix_rf.png")
+plt.savefig(confusion_matrix_path)
+print(f"✅ Confusion Matrix plot saved to: {confusion_matrix_path}")
 
-print(f"\n✅ Model and results saved in: {output_dir}/")
+plt.close('all') # Close all plots to prevent them from showing immediately
+
+print(f"\n🥳 Model training and evaluation complete. Results in: {OUTPUT_DIR}/")

@@ -3,50 +3,104 @@ import numpy as np
 from sklearn.semi_supervised import LabelSpreading
 from sklearn.metrics import classification_report, confusion_matrix
 import os
+from sklearn.preprocessing import StandardScaler # Ensure this is imported
 
-# Load labeled dataset 
+print("Starting Semi-Supervised Learning process...")
+
+# --- Dynamic Path Handling ---
 script_dir = os.path.dirname(os.path.abspath(__file__))
-input_path = os.path.join(script_dir, "output", "user_features_labeled.csv")
 
+# Input path: labeled features from label_generation.py (Correctly points to top-level outputs)
+input_path = os.path.join(script_dir, "..", "outputs", "user_features_labeled.csv")
+
+# Output directory for SSL results (Correctly points to top-level outputs)
+output_dir = os.path.join(script_dir, "..", "outputs", "ssl_results")
+os.makedirs(output_dir, exist_ok=True) # Create output directory for SSL results
+
+print(f"Attempting to load labeled data from: {input_path}") # Debugging print
+
+# --- Features for SSL ---
+# It's generally good to use ALL available relevant features for SSL as it learns manifold.
+# This should include features used in labeling AND features used for prediction.
+ALL_ENGINEERED_FEATURES = [
+    'avg_likes', 'avg_comments', 'avg_engagement', 'avg_sentiment',
+    'neg_post_ratio', 'total_posts', 'avg_post_interval',
+    'avg_emotional_words', 'night_activity_ratio', 'engagement_volatility'
+]
+
+# Load labeled dataset (Adding more robust error handling and feature check)
+data = None # Initialize data to None
 try:
     data = pd.read_csv(input_path)
+    # Check if 'reciprocity' column exists and add it to ALL_ENGINEERED_FEATURES if it does
+    if 'reciprocity' in data.columns and 'reciprocity' not in ALL_ENGINEERED_FEATURES:
+        ALL_ENGINEERED_FEATURES.append('reciprocity')
+
     print(f"✅ Loaded data from {input_path}")
 except FileNotFoundError:
-    print("❌ Please generate labeled dataset first using label_generation.py")
+    print(f"❌ Error: Labeled dataset not found at {input_path}")
+    print("💡 Please ensure 'label_generation.py' has been run successfully and the file exists at this exact path.")
+    exit()
+except Exception as e:
+    print(f"❌ An unexpected error occurred while loading data: {e}")
     exit()
 
-# Prepare features and labels 
-# Select only numeric columns for features
-X = data.select_dtypes(include=[np.number])
+# If data loading failed, exit
+if data is None:
+    exit()
 
+# Prepare features and labels
+# Ensure all selected features exist and handle NaNs
+missing_feats_ssl = [f for f in ALL_ENGINEERED_FEATURES if f not in data.columns]
+if missing_feats_ssl:
+    print(f"❌ Error: The following SSL features are missing from the dataset: {missing_feats_ssl}")
+    print("Please check 'feature_engineer.py' and 'label_generation.py' outputs.")
+    exit()
+
+X = data[ALL_ENGINEERED_FEATURES].fillna(0) # Fill NaNs for selected features
 y = data['label']
 
-# Simulate semi-supervised scenario 
+print(f"\nFeatures (X) shape: {X.shape}")
+print(f"Target (y) shape: {y.shape}")
+print(f"Class distribution in target:\n{y.value_counts()}")
+
+# Simulate semi-supervised scenario
 # Mask 80% of labels as -1 (unlabeled)
+print("\nSimulating semi-supervised scenario (masking 80% of labels)...")
 rng = np.random.RandomState(42)
 mask = rng.rand(len(y)) < 0.8
 y_unlabeled = y.copy()
 y_unlabeled[mask] = -1  # unlabeled
+print(f"Distribution of labels for SSL training:\n{pd.Series(y_unlabeled).value_counts()}")
 
-# Train Label Spreading model 
-model = LabelSpreading(kernel='rbf', alpha=0.2)
-model.fit(X, y_unlabeled)
 
-#  Get predictions for all data 
+# Train Label Spreading model
+print("\n🚀 Training Label Spreading model...")
+# Consider scaling X if features have very different ranges, as RBF kernel is distance-based
+scaler = StandardScaler()
+X_scaled = scaler.fit_transform(X) # Scale features for RBF kernel
+
+model = LabelSpreading(kernel='rbf', gamma=20, alpha=0.2, max_iter=30) # Increased gamma, max_iter for potentially better performance
+model.fit(X_scaled, y_unlabeled) # Train on scaled features
+print("✅ Label Spreading model training complete.")
+
+# Get predictions for all data (transduction)
 predicted = model.transduction_
 
-#  Evaluation 
-print("\n📊 Classification Report (on all data):")
+# Evaluation
+print("\n📊 Classification Report (on all data, comparing true vs transduced labels):")
 print(classification_report(y, predicted))
 
 print("\n🔍 Confusion Matrix:")
 print(confusion_matrix(y, predicted))
 
-# Save predictions 
+# Save predictions
 data['ssl_label'] = predicted
-output_path = os.path.join(script_dir, "output", "user_features_ssl.csv")
+output_path = os.path.join(output_dir, "user_features_ssl_labeled.csv")
 try:
     data.to_csv(output_path, index=False)
     print(f"\n✅ SSL labeled data saved to: {output_path}")
 except Exception as e:
     print(f"❌ Failed to save SSL labeled data: {e}")
+
+print("Semi-Supervised Learning process complete.")

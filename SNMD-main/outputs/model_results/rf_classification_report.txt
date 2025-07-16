@@ -1,0 +1,15 @@
+              precision    recall  f1-score   support
+
+           0       0.90      0.97      0.93        63
+           1       0.00      0.00      0.00         7
+
+    accuracy                           0.87        70
+   macro avg       0.45      0.48      0.47        70
+weighted avg       0.81      0.87      0.84        70
+
+
+Accuracy on Test Set: 0.8714
+Mean CV Accuracy: 0.9000
+Std Dev CV Accuracy: 0.0128
+
+Best Hyperparameters: {'class_weight': 'balanced', 'max_depth': 10, 'min_samples_leaf': 1, 'n_estimators': 50}
