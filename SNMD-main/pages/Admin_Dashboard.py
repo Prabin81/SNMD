@@ -14,22 +14,25 @@ if "logged_in" not in st.session_state or not st.session_state.logged_in:
     st.stop() # Stop execution of this page if not logged in
 
 # --- Dynamic Path Handling ---
-# This file is located at E:/SNMD-MAIN/pages/2_Admin_Dashboard.py
-# All data/model results are expected to be at E:/SNMD-MAIN/outputs/
-# To get from the current file's directory to E:/SNMD-MAIN/, we go up one level (../)
 script_dir = os.path.dirname(os.path.abspath(__file__))
-base_project_dir = os.path.join(script_dir, "..") # This now points to E:/SNMD-MAIN/
+
+# CORRECTED base_root_dir: Go up two levels from 'pages'
+#   1. From 'pages' to 'SNMD-main' (..)
+#   2. From 'SNMD-main' to 'SNMD-MAIN' (..)
+base_root_dir = os.path.join(script_dir, "..", "..") # This now points to E:/SNMD-MAIN/
 
 # Define absolute paths to the relevant data and model output files
-LABELED_DATA_PATH = os.path.join(base_project_dir, "outputs", "user_features_labeled.csv")
-CLEANED_DATA_PATH = os.path.join(base_project_dir, "outputs", "snmdd_dataset_cleaned.csv")
-MODEL_RESULTS_DIR = os.path.join(base_project_dir, "outputs", "ssl_results")
+LABELED_DATA_PATH = os.path.join(base_root_dir, "outputs", "user_features_labeled.csv")
+CLEANED_DATA_PATH = os.path.join(base_root_dir, "outputs", "snmdd_dataset_cleaned.csv")
+
+# ssl_results folder is directly under E:/SNMD-MAIN/outputs/
+MODEL_RESULTS_DIR = os.path.join(base_root_dir, "outputs", "ssl_results")
 
 # Paths for specific model output files within MODEL_RESULTS_DIR
 CLASSIFICATION_REPORT_PATH = os.path.join(MODEL_RESULTS_DIR, "rf_classification_report.txt")
 CONFUSION_MATRIX_PATH = os.path.join(MODEL_RESULTS_DIR, "confusion_matrix_rf.png")
 FEATURE_IMPORTANCES_PATH = os.path.join(MODEL_RESULTS_DIR, "feature_importances_rf.png")
-MODEL_RF_PATH = os.path.join(base_project_dir, "outputs", "model_rf.pkl") # Assuming main model is here
+MODEL_RF_PATH = os.path.join(base_root_dir, "outputs", "model_rf.pkl") # Assuming main model is directly in E:/SNMD-MAIN/outputs/
 
 # --- Streamlit Page Content ---
 st.title("📊 Admin Dashboard: Social Network Data Insights")
@@ -159,14 +162,10 @@ with tab3:
         st.subheader("Basic Statistics of Cleaned Data")
         st.write(cleaned_df.describe())
 
-        st.subheader("Example of Cleaned Text Content")
-        # Display a few examples of cleaned text
-        for i, row in cleaned_df.head(5).iterrows():
-            st.write(f"**Post {i+1}:** {row['cleaned_text']}")
 
     except FileNotFoundError:
         st.error(f"Cleaned dataset file not found at `{CLEANED_DATA_PATH}`. Please ensure your data cleaning process (e.g., `data_cleaning.py` or `main.py`) has been run.")
     except pd.errors.EmptyDataError:
         st.error(f"The file `{CLEANED_DATA_PATH}` is empty. Please check the data source.")
     except Exception as e:
-        st.error(f"Error loading cleaned data: {e}")
+        st.error(f"An unexpected error occurred while loading cleaned data: {e}")

@@ -27,11 +27,11 @@ if st.session_state.logged_in:
     if st.sidebar.button("Logout"):
         st.session_state.logged_in = False
         st.session_state.username = ""
-        st.rerun()
+        st.rerun() # Use st.rerun() for a page refresh
 
-    # CORRECTED PAGE LINKS: Path is directly 'pages/...' relative to app.py
-    st.sidebar.page_link("pages/1_Questionnaire_App.py", label="❓ User Questionnaire", icon="📝")
-    st.sidebar.page_link("pages/Admin_Dashboard.py", label="📊 Admin Dashboard", icon="⚙️") # Changed to Admin_Dashboard.py as per your image.
+    # CORRECTED PAGE LINKS: Match exact filenames in the 'pages' directory.
+    st.sidebar.page_link("pages/Questionnaire_App.py", label="❓ User Questionnaire", icon="📝") #
+    st.sidebar.page_link("pages/Admin_Dashboard.py", label="📊 Admin Dashboard", icon="⚙️") #
 else:
     st.sidebar.subheader("Admin Login")
     username_input = st.sidebar.text_input("Username", key="login_username")
@@ -41,17 +41,18 @@ else:
         if username_input == ADMIN_USERNAME and password_input == ADMIN_PASSWORD:
             st.session_state.logged_in = True
             st.session_state.username = username_input
-            # CORRECTED REDIRECTION: Use st.switch_page
-            st.switch_page("pages/Admin_Dashboard.py") # Direct to Admin Dashboard after login
+            st.sidebar.success("Logged in successfully!")
+            # CORRECTED REDIRECTION: Use st.switch_page for navigation.
+            st.switch_page("pages/Admin_Dashboard.py") #
         else:
             st.session_state.logged_in = False
             st.sidebar.error("Invalid username or password")
 
 # --- Main Page Content (Visible if not logged in or as a landing page) ---
-if not st.session_state.logged_in:
+if not st.session_state.logged_in: # Fix: Use st.session_state.logged_in
     st.title("Welcome to the Social Network Mental Disorder Prediction App")
     st.info("Please login using the sidebar to access the admin dashboard or fill the questionnaire.")
     st.markdown("---")
     st.write("This application provides a tool to assess potential risks of Social Network Mental Disorders (SNMD).")
     st.write("Users can complete a psychological questionnaire, while administrators can view aggregated data and model insights from the social network analysis.")
-    st.write("To proceed to the user questionnaire, simply navigate to `pages/1_Questionnaire_App.py` directly or after logging in.")
+    st.write("To proceed to the user questionnaire, simply navigate to `pages/Questionnaire_App.py` directly or after logging in.")

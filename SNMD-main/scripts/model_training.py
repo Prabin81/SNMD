@@ -11,13 +11,26 @@ import numpy as np
 
 print("Starting model training and evaluation process...")
 
-# --- Configuration ---
-# Data input path (Now correctly pointing to top-level outputs)
-DATA_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "outputs", "user_features_labeled.csv")
+# Get the directory of the current script (model_training.py)
+# This will be E:\SNMD-MAIN\SNMD-main\scripts\
+script_dir = os.path.dirname(os.path.abspath(__file__))
 
-# Output directory for model results (Now correctly pointing to top-level outputs)
-OUTPUT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "outputs", "model_results")
-os.makedirs(OUTPUT_DIR, exist_ok=True)
+# Define the root project directory (E:\SNMD-MAIN\)
+# From scripts, go up one level (to SNMD-main), then up another level (to SNMD-MAIN)
+root_project_dir = os.path.join(script_dir, "..", "..")
+
+# --- Configuration ---
+# Data input path: E:\SNMD-MAIN\outputs\user_features_labeled.csv
+DATA_PATH = os.path.join(root_project_dir, "outputs", "user_features_labeled.csv")
+
+# Output directory for model results (e.g., reports, plots)
+# It seems your Admin_Dashboard.py expects these in 'ssl_results' under 'outputs'
+OUTPUT_DIR_FOR_RESULTS = os.path.join(root_project_dir, "outputs", "ssl_results")
+os.makedirs(OUTPUT_DIR_FOR_RESULTS, exist_ok=True) # Create if it doesn't exist
+
+# Output path for the trained main RandomForest model
+# Admin_Dashboard.py expects model_rf.pkl directly in E:\SNMD-MAIN\outputs\
+MODEL_RF_SAVE_PATH = os.path.join(root_project_dir, "outputs", "model_rf.pkl")
 
 # --- CRITICAL CHANGE: FEATURES FOR PREDICTION ---
 # These features should NOT be the ones directly summed/used in your generate_ordinal_label heuristic.
@@ -182,7 +195,7 @@ if not model.feature_importances_.size == 0:
     plt.xlabel('Importance')
     plt.ylabel('Feature')
     plt.tight_layout()
-    plt.savefig(os.path.join(OUTPUT_DIR, "feature_importances_rf.png"))
+    plt.savefig(os.path.join(OUTPUT_DIR_FOR_RESULTS, "feature_importances_rf.png")) # Save to ssl_results
     #plt.show() # Commented out for automated runs
 else:
     print("Could not compute feature importances.")
@@ -192,25 +205,30 @@ else:
 print("\nGenerating Confusion Matrix plot...")
 conf_matrix = confusion_matrix(y_test, y_pred)
 plt.figure(figsize=(6, 4))
+# Dynamically determine class labels based on unique values in y_test
+class_labels = [f"Class {c}" for c in sorted(np.unique(y_test))] # Default if not known
+if len(np.unique(y_test)) == 3: # Assuming 3 classes (0, 1, 2)
+    class_labels = ['Low Risk', 'Moderate Risk', 'High Risk'] #
+elif len(np.unique(y_test)) == 2: # Assuming 2 classes (0, 1)
+    class_labels = ['Low Risk', 'High Risk'] #
 sns.heatmap(conf_matrix, annot=True, fmt='d', cmap='Blues',
-            xticklabels=['Low Risk', 'Moderate Risk', 'High Risk'], # Adjusted for 3 classes
-            yticklabels=['Low Risk', 'Moderate Risk', 'High Risk']) # Adjusted for 3 classes
+            xticklabels=class_labels, # Adjusted for dynamic classes
+            yticklabels=class_labels) # Adjusted for dynamic classes
 plt.xlabel('Predicted')
 plt.ylabel('Actual')
 plt.title('Confusion Matrix')
 plt.tight_layout()
 
 # --- Save Outputs ---
-print(f"\nSaving model and results to: {OUTPUT_DIR}/")
+print(f"\nSaving model and results...")
 
-# Save model
-model_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "models", "model_rf.pkl") # Save model in SNMD-main/models/
-with open(model_path, "wb") as f:
+# Save main model (RandomForestClassifier) to E:\SNMD-MAIN\outputs\
+with open(MODEL_RF_SAVE_PATH, "wb") as f:
     pickle.dump(model, f)
-print(f"✅ Model saved to: {model_path}")
+print(f"✅ Main RandomForest Model saved to: {MODEL_RF_SAVE_PATH}")
 
-# Save classification report
-report_path = os.path.join(OUTPUT_DIR, "rf_classification_report.txt")
+# Save classification report to E:\SNMD-MAIN\outputs\ssl_results\
+report_path = os.path.join(OUTPUT_DIR_FOR_RESULTS, "rf_classification_report.txt")
 with open(report_path, "w") as f:
     f.write(report)
     f.write(f"\n\nAccuracy on Test Set: {accuracy:.4f}")
@@ -219,11 +237,11 @@ with open(report_path, "w") as f:
     f.write(f"\n\nBest Hyperparameters: {grid_search.best_params_}")
 print(f"✅ Classification report saved to: {report_path}")
 
-# Save confusion matrix plot
-confusion_matrix_path = os.path.join(OUTPUT_DIR, "confusion_matrix_rf.png")
+# Save confusion matrix plot to E:\SNMD-MAIN\outputs\ssl_results\
+confusion_matrix_path = os.path.join(OUTPUT_DIR_FOR_RESULTS, "confusion_matrix_rf.png")
 plt.savefig(confusion_matrix_path)
 print(f"✅ Confusion Matrix plot saved to: {confusion_matrix_path}")
 
 plt.close('all') # Close all plots to prevent them from showing immediately
 
-print(f"\n🥳 Model training and evaluation complete. Results in: {OUTPUT_DIR}/")
+print(f"\n🥳 Model training and evaluation complete. Results in: {root_project_dir}/outputs/ and {OUTPUT_DIR_FOR_RESULTS}/")
