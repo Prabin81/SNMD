@@ -19,7 +19,7 @@ try:
         model = pickle.load(f)
     # st.success(f"Model loaded successfully from: {model_path}") # For debugging
 except FileNotFoundError:
-    st.error(f"Error: Questionnaire model not found at `{model_path}`. Please ensure your model training script (e.g., part of `main.py` or a dedicated `train_questionnaire_model.py` if you create one) has been run to create this file.")
+    st.error(f"Error: Questionnaire model not found at `{model_path}`. Please ensure your model training script (e.g., train_questionnaire_model.py) has been run to create this file.")
     st.stop() # Stop the app if model is not found
 except Exception as e:
     st.error(f"Error loading model: {e}")

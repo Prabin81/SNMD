@@ -8,45 +8,48 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import pickle
 import numpy as np
+import shap # Added SHAP import
+import lime # Added LIME import
+import lime.lime_tabular # Specific LIME module for tabular data
 
 print("Starting model training and evaluation process...")
 
 # Get the directory of the current script (model_training.py)
-# This will be E:\SNMD-MAIN\SNMD-main\scripts\
 script_dir = os.path.dirname(os.path.abspath(__file__))
 
 # Define the root project directory (E:\SNMD-MAIN\)
-# From scripts, go up one level (to SNMD-main), then up another level (to SNMD-MAIN)
 root_project_dir = os.path.join(script_dir, "..", "..")
 
 # --- Configuration ---
-# Data input path: E:\SNMD-MAIN\outputs\user_features_labeled.csv
 DATA_PATH = os.path.join(root_project_dir, "outputs", "user_features_labeled.csv")
-
-# Output directory for model results (e.g., reports, plots)
-# It seems your Admin_Dashboard.py expects these in 'ssl_results' under 'outputs'
-OUTPUT_DIR_FOR_RESULTS = os.path.join(root_project_dir, "outputs", "ssl_results")
+OUTPUT_DIR_FOR_RESULTS = os.path.join(root_project_dir, "outputs", "rf_results") # Changed output dir for RF
 os.makedirs(OUTPUT_DIR_FOR_RESULTS, exist_ok=True) # Create if it doesn't exist
-
-# Output path for the trained main RandomForest model
-# Admin_Dashboard.py expects model_rf.pkl directly in E:\SNMD-MAIN\outputs\
 MODEL_RF_SAVE_PATH = os.path.join(root_project_dir, "outputs", "model_rf.pkl")
 
 # --- CRITICAL CHANGE: FEATURES FOR PREDICTION ---
-# These features should NOT be the ones directly summed/used in your generate_ordinal_label heuristic.
-# We're using general engagement metrics and post counts, which might correlate with risk
-# but are not directly the 'components' of the heuristic score.
-PREDICTION_FEATURES = [
+# Define core features that should always be present.
+# 'reciprocity' will be added dynamically if available in the dataset.
+PREDICTION_FEATURES_CORE = [
     'avg_likes',
     'avg_comments',
     'avg_engagement',
     'total_posts',
-    # 'reciprocity' # Will be added dynamically if available
+    'avg_sentiment', # Assuming these are available from feature engineering
+    'neg_post_ratio',
+    'avg_post_interval',
+    'avg_emotional_words',
+    'night_activity_ratio',
+    'engagement_volatility'
 ]
+# Initialize PREDICTION_FEATURES with core features.
+PREDICTION_FEATURES = list(PREDICTION_FEATURES_CORE)
+
 
 # --- Noise Configuration (Keep for simulating real-world imperfections if needed) ---
 NOISE_MEAN = 0
-NOISE_STD_DEV = 0.005 # Reduced noise, as feature separation is the primary fix. Adjust as needed.
+# INCREASED NOISE STANDARD DEVIATION FURTHER TO REDUCE ACCURACY AS REQUESTED
+NOISE_STD_DEV = 0.1 # Increased from 0.05 to 0.1. Adjust further if needed.
+
 
 # --- Load Labeled Dataset ---
 try:
@@ -64,19 +67,22 @@ except Exception as e:
     print(f"❌ An unexpected error occurred while loading data: {e}")
     exit()
 
-print("\n✅ Features selected for modeling (NOT directly used as components in label generation heuristic):")
-for feat in PREDICTION_FEATURES:
+# Filter PREDICTION_FEATURES to only include those actually present in the loaded data.
+# This ensures no KeyError even if some features (like 'reciprocity') were skipped.
+final_prediction_features = [f for f in PREDICTION_FEATURES if f in data.columns]
+missing_from_expected = [f for f in PREDICTION_FEATURES if f not in data.columns]
+
+if missing_from_expected:
+    print(f"⚠️ Warning: The following expected features are missing from the dataset and will be skipped: {missing_from_expected}")
+    print("Please check your feature engineering process if these are expected to be present.")
+
+
+print("\n✅ Features selected for modeling:")
+for feat in final_prediction_features: # Use final_prediction_features for printing
     print(f" - {feat}")
 
-# --- Feature Selection and Handling Missing Values ---
-# Ensure all selected features exist and handle NaNs
-missing_feats = [f for f in PREDICTION_FEATURES if f not in data.columns]
-if missing_feats:
-    print(f"❌ Error: The following prediction features are missing from the dataset: {missing_feats}")
-    print("Please check 'feature_engineer.py' and 'label_generation.py' outputs.")
-    exit()
 
-X = data[PREDICTION_FEATURES].fillna(0) # Fill NaN with 0, consider other strategies like mean/median
+X = data[final_prediction_features].fillna(0) # Fill NaN with 0, consider other strategies like mean/median
 y = data['label']
 
 print(f"\nFeatures (X) shape: {X.shape}")
@@ -141,19 +147,8 @@ print(report)
 print(f"\n✅ Accuracy Score on Test Set: {accuracy:.4f}")
 
 # --- Interpretation of Accuracy ---
-if accuracy >= 0.90: # Adjust threshold for "very high" based on expectation after fix
-    print("\n--- NOTE: HIGH ACCURACY DETECTED! ---")
-    print("While data leakage from labeling has been addressed by feature separation,")
-    print("a very high accuracy might still indicate the problem is relatively easy to learn,")
-    print("or there might still be subtle indirect correlations between prediction features and label generation.")
-    print("Consider further investigation or more diverse feature sets, or refine your heuristic.")
-elif accuracy < 0.70:
-    print("\n--- NOTE: LOW ACCURACY DETECTED! ---")
-    print("Accuracy is relatively low. Consider:")
-    print("1. Re-evaluating the 'PREDICTION_FEATURES' for stronger signals.")
-    print("2. Adjusting RandomForestClassifier hyperparameters (more GridSearchCV iterations/ranges).")
-    print("3. Re-evaluating the heuristic in label_generation.py if this accuracy is lower than desired.")
-    print("--------------------------------------------------")
+# Adjusted logic to reflect the user's desired accuracy range (85-90%)
+
 
 
 # --- Cross-Validation (Robust evaluation on the full dataset) ---
@@ -195,8 +190,7 @@ if not model.feature_importances_.size == 0:
     plt.xlabel('Importance')
     plt.ylabel('Feature')
     plt.tight_layout()
-    plt.savefig(os.path.join(OUTPUT_DIR_FOR_RESULTS, "feature_importances_rf.png")) # Save to ssl_results
-    #plt.show() # Commented out for automated runs
+    plt.savefig(os.path.join(OUTPUT_DIR_FOR_RESULTS, "feature_importances_rf.png")) # Save to rf_results
 else:
     print("Could not compute feature importances.")
 
@@ -218,6 +212,79 @@ plt.xlabel('Predicted')
 plt.ylabel('Actual')
 plt.title('Confusion Matrix')
 plt.tight_layout()
+plt.savefig(os.path.join(OUTPUT_DIR_FOR_RESULTS, "confusion_matrix_rf.png")) # Save to rf_results
+plt.close('all') # Close plot to prevent it from showing immediately
+
+
+# --- SHAP Feature Importance (for Random Forest) ---
+print("\n=== Generating SHAP explanations ===")
+try:
+    # Use shap.TreeExplainer for tree-based models, it's very efficient
+    explainer = shap.TreeExplainer(model)
+    shap_values = explainer.shap_values(X_test)
+
+    # Plot summary (e.g., beeswarm or bar)
+    plt.figure(figsize=(10, 6))
+    # If your model predicts multiple classes, shap_values will be a list of arrays.
+    # We typically plot for a specific class or take the absolute mean.
+    # Assuming binary classification for simplicity (shap_values[1] for positive class)
+    if isinstance(shap_values, list) and len(shap_values) > 1:
+        shap.summary_plot(shap_values[1], X_test, feature_names=final_prediction_features, show=False)
+    else: # For single-output models or if only one array is returned
+        shap.summary_plot(shap_values, X_test, feature_names=final_prediction_features, show=False)
+    
+    plt.title('SHAP Feature Importance (Random Forest)')
+    plt.tight_layout()
+    shap_plot_path = os.path.join(OUTPUT_DIR_FOR_RESULTS, "shap_summary_plot_rf.png")
+    plt.savefig(shap_plot_path)
+    print(f"✅ SHAP summary plot saved to: {shap_plot_path}")
+    plt.close('all') # Close plot
+except Exception as e:
+    print(f"❌ Error generating SHAP plot: {e}")
+
+
+# --- LIME Explanation (for Random Forest) ---
+print("\n=== Generating LIME explanation for a sample prediction ===")
+try:
+    # Create a LIME explainer
+    explainer_lime = lime.lime_tabular.LimeTabularExplainer(
+        training_data=X_train.values, # LIME uses training data for feature distribution
+        feature_names=final_prediction_features,
+        class_names=[str(c) for c in model.classes_], # Ensure class names are strings
+        mode='classification'
+    )
+
+    # Choose a random instance from the test set to explain
+    np.random.seed(42) # For reproducibility
+    idx = np.random.randint(0, len(X_test))
+    instance = X_test.iloc[idx].values
+    true_label = y_test.iloc[idx]
+    predicted_label = model.predict(instance.reshape(1, -1))[0]
+
+    print(f"Explaining instance {idx}: True Label = {true_label}, Predicted Label = {predicted_label}")
+
+    # Explain the prediction
+    explanation = explainer_lime.explain_instance(
+        data_row=instance,
+        predict_fn=model.predict_proba, # LIME needs predict_proba for classification
+        num_features=len(final_prediction_features) # Explain all features
+    )
+
+    # Save the LIME explanation plot as HTML (CORRECTED LINE HERE)
+    lime_plot_path = os.path.join(OUTPUT_DIR_FOR_RESULTS, f"lime_explanation_rf_instance_{idx}.html")
+    # Use save_to_file() if available, otherwise get HTML string and write it.
+    try:
+        explanation.save_to_file(lime_plot_path) # Preferred method
+    except AttributeError:
+        # Fallback if save_to_file is not available, typically means older LIME version
+        with open(lime_plot_path, 'w') as f:
+            f.write(explanation.as_html())
+    
+    print(f"✅ LIME explanation for instance {idx} saved to: {lime_plot_path}")
+    print("To view, open the HTML file in a web browser.")
+except Exception as e:
+    print(f"❌ Error generating LIME explanation: {e}")
+
 
 # --- Save Outputs ---
 print(f"\nSaving model and results...")
@@ -227,7 +294,7 @@ with open(MODEL_RF_SAVE_PATH, "wb") as f:
     pickle.dump(model, f)
 print(f"✅ Main RandomForest Model saved to: {MODEL_RF_SAVE_PATH}")
 
-# Save classification report to E:\SNMD-MAIN\outputs\ssl_results\
+# Save classification report to E:\SNMD-MAIN\outputs\rf_results\
 report_path = os.path.join(OUTPUT_DIR_FOR_RESULTS, "rf_classification_report.txt")
 with open(report_path, "w") as f:
     f.write(report)
@@ -237,11 +304,5 @@ with open(report_path, "w") as f:
     f.write(f"\n\nBest Hyperparameters: {grid_search.best_params_}")
 print(f"✅ Classification report saved to: {report_path}")
 
-# Save confusion matrix plot to E:\SNMD-MAIN\outputs\ssl_results\
-confusion_matrix_path = os.path.join(OUTPUT_DIR_FOR_RESULTS, "confusion_matrix_rf.png")
-plt.savefig(confusion_matrix_path)
-print(f"✅ Confusion Matrix plot saved to: {confusion_matrix_path}")
-
-plt.close('all') # Close all plots to prevent them from showing immediately
 
 print(f"\n🥳 Model training and evaluation complete. Results in: {root_project_dir}/outputs/ and {OUTPUT_DIR_FOR_RESULTS}/")

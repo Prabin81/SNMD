@@ -12,12 +12,12 @@ print("Starting main data cleaning and initial EDA process...")
 script_dir = os.path.dirname(os.path.abspath(__file__))
 
 # Input path: Original raw data (adjust 'output' if your raw data is elsewhere)
-# Based on your structure, it looks like original raw 'snmdd_dataset.csv' is under SNMD-main/output/
-input_data_path = os.path.join(script_dir, "..", "output", "E:\SNMD-main\SNMD-main\output\snmdd_dataset.csv")
+# Based on your structure, it looks like original raw 'snmdd_dataset.csv' is under SNMD-main/data/
+input_data_path = os.path.join(script_dir, "data", "E:\SNMD-main\SNMD-main\output\snmdd_dataset.csv")
 
 # Output directory for cleaned data (should be the top-level outputs folder)
-# From SNMD-main/SNMD-main/, go up one level (..) to SNMD-main/, then into 'outputs'
-output_dir_parent = os.path.join(script_dir, "..", "..", "outputs")
+# From SNMD-main/, go into 'outputs'
+output_dir_parent = os.path.join(script_dir, "outputs")
 os.makedirs(output_dir_parent, exist_ok=True) # Ensure the main outputs directory exists
 output_cleaned_path = os.path.join(output_dir_parent, "snmdd_dataset_cleaned.csv")
 
@@ -28,7 +28,7 @@ try:
     print(f"Initial dataset shape: {df.shape}")
 except FileNotFoundError:
     print(f"❌ Error: Raw dataset not found at {input_data_path}.")
-    print("Please ensure 'snmdd_dataset.csv' is in the correct 'output' subfolder.")
+    print("Please ensure 'snmdd_dataset.csv' is in the correct 'data' subfolder.")
     exit()
 except Exception as e:
     print(f"❌ An error occurred while loading raw data: {e}")
@@ -74,8 +74,8 @@ print("✅ Extracted 'date' and 'hour' features.")
 # Basic text cleaning (e.g., remove URLs, special characters)
 def clean_text(text):
     text = str(text) # Ensure text is string
-    text = re.sub(r'http\S+', '', text)  # Remove URLs
-    text = re.sub(r'[^\w\s]', '', text)  # Remove punctuation
+    text = re.sub(r'http\S+', '', text)   # Remove URLs
+    text = re.sub(r'[^\w\s]', '', text)   # Remove punctuation
     text = text.lower() # Convert to lowercase
     return text
 

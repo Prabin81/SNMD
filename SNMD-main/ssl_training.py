@@ -3,7 +3,7 @@ import numpy as np
 from sklearn.semi_supervised import LabelSpreading
 from sklearn.metrics import classification_report, confusion_matrix
 import os
-from sklearn.preprocessing import StandardScaler # Ensure this is imported
+from sklearn.preprocessing import StandardScaler
 
 print("Starting Semi-Supervised Learning process...")
 
@@ -11,10 +11,10 @@ print("Starting Semi-Supervised Learning process...")
 script_dir = os.path.dirname(os.path.abspath(__file__))
 
 # Input path: labeled features from label_generation.py (Correctly points to top-level outputs)
-input_path = os.path.join(script_dir, "..", "outputs", "user_features_labeled.csv")
+input_path = os.path.join(script_dir, "outputs", "user_features_labeled.csv")
 
 # Output directory for SSL results (Correctly points to top-level outputs)
-output_dir = os.path.join(script_dir, "..", "outputs", "ssl_results")
+output_dir = os.path.join(script_dir, "outputs", "ssl_results")
 os.makedirs(output_dir, exist_ok=True) # Create output directory for SSL results
 
 print(f"Attempting to load labeled data from: {input_path}") # Debugging print
@@ -64,15 +64,10 @@ print(f"\nFeatures (X) shape: {X.shape}")
 print(f"Target (y) shape: {y.shape}")
 print(f"Class distribution in target:\n{y.value_counts()}")
 
-# Simulate semi-supervised scenario
-# Mask 80% of labels as -1 (unlabeled)
-print("\nSimulating semi-supervised scenario (masking 80% of labels)...")
-rng = np.random.RandomState(42)
-mask = rng.rand(len(y)) < 0.8
+# Simulate semi-supervised scenario (masking labels already done in label_generation.py)
+# Ensure y_unlabeled is used for training, where -1 are unlabeled data points
 y_unlabeled = y.copy()
-y_unlabeled[mask] = -1  # unlabeled
 print(f"Distribution of labels for SSL training:\n{pd.Series(y_unlabeled).value_counts()}")
-
 
 # Train Label Spreading model
 print("\n🚀 Training Label Spreading model...")
@@ -87,12 +82,17 @@ print("✅ Label Spreading model training complete.")
 # Get predictions for all data (transduction)
 predicted = model.transduction_
 
-# Evaluation
-print("\n📊 Classification Report (on all data, comparing true vs transduced labels):")
-print(classification_report(y, predicted))
+# Evaluation (only if 'y' contains original labels for evaluation)
+# Filter out -1 labels from both y and predicted for evaluation
+valid_indices = y != -1
+if valid_indices.sum() > 0:
+    print("\n📊 Classification Report (on all data, comparing true vs transduced labels for known points):")
+    print(classification_report(y[valid_indices], predicted[valid_indices]))
 
-print("\n🔍 Confusion Matrix:")
-print(confusion_matrix(y, predicted))
+    print("\n🔍 Confusion Matrix:")
+    print(confusion_matrix(y[valid_indices], predicted[valid_indices]))
+else:
+    print("No original labeled data points available for evaluation.")
 
 # Save predictions
 data['ssl_label'] = predicted
