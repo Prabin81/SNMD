@@ -2,20 +2,17 @@ import streamlit as st
 import os
 
 # --- Configuration for Admin Credentials ---
-# It's highly recommended to use Streamlit secrets for production.
-# For local development, you can set defaults or define them here.
-ADMIN_USERNAME = st.secrets.get("ADMIN_USERNAME", "admin") # Default 'admin' if not found in secrets
-ADMIN_PASSWORD = st.secrets.get("ADMIN_PASSWORD", "admin123") # Default 'admin123' if not found in secrets
+ADMIN_USERNAME = st.secrets.get("ADMIN_USERNAME", "admin")
+ADMIN_PASSWORD = st.secrets.get("ADMIN_PASSWORD", "admin123")
 
 # --- Global Streamlit Setup (only done once per app run) ---
 st.set_page_config(
     page_title="SNMD Prediction App",
-    layout="wide", # Use wide layout for more space
+    layout="wide",
     initial_sidebar_state="expanded"
 )
 
 # Initialize session state for login status
-# Streamlit's session_state persists variables across reruns.
 if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
 if "username" not in st.session_state:
@@ -26,17 +23,16 @@ st.sidebar.title("SNMD Application")
 st.sidebar.markdown("---")
 
 if st.session_state.logged_in:
-    # If logged in, show logout button and page links
     st.sidebar.success(f"Logged in as {st.session_state.username}")
     if st.sidebar.button("Logout"):
         st.session_state.logged_in = False
         st.session_state.username = ""
-        st.rerun() # Rerun the app to show the login page again
+        st.rerun()
 
+    # CORRECTED PAGE LINKS: Path is directly 'pages/...' relative to app.py
     st.sidebar.page_link("pages/1_Questionnaire_App.py", label="❓ User Questionnaire", icon="📝")
-    st.sidebar.page_link("pages/2_Admin_Dashboard.py", label="📊 Admin Dashboard", icon="⚙️")
+    st.sidebar.page_link("pages/Admin_Dashboard.py", label="📊 Admin Dashboard", icon="⚙️") # Changed to Admin_Dashboard.py as per your image.
 else:
-    # If not logged in, show the login form
     st.sidebar.subheader("Admin Login")
     username_input = st.sidebar.text_input("Username", key="login_username")
     password_input = st.sidebar.text_input("Password", type="password", key="login_password")
@@ -45,10 +41,10 @@ else:
         if username_input == ADMIN_USERNAME and password_input == ADMIN_PASSWORD:
             st.session_state.logged_in = True
             st.session_state.username = username_input
-            st.sidebar.success("Logged in successfully!")
-            st.experimental_rerun() # Rerun to update the sidebar and show app pages
+            # CORRECTED REDIRECTION: Use st.switch_page
+            st.switch_page("pages/Admin_Dashboard.py") # Direct to Admin Dashboard after login
         else:
-            st.session_state.logged_in = False # Ensure this is false on failed attempt
+            st.session_state.logged_in = False
             st.sidebar.error("Invalid username or password")
 
 # --- Main Page Content (Visible if not logged in or as a landing page) ---
